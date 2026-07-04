@@ -138,6 +138,11 @@
   const POWER_DURATION_MS = 7000;
   const RAPID_CADENCE_MS = 110;
 
+  // A snailon killed mid-taunt drops its speech bubble, which falls and stuns
+  // the ship on contact.
+  const BUBBLE_FALL = 1.4; // movement factor
+  const STUN_DURATION_MS = 1400;
+
   // Small snailons (splitter children / matriarch hatchlings)
   const BABY_W = 60;
   const BABY_H = 48;
@@ -307,12 +312,13 @@
   let enemyShots = []; // falling slime globs
   let particles = []; // explosion sparks (visual only)
   let powerups = []; // falling pickups
+  let fallingBubbles = []; // dropped speech bubbles (from snailons killed mid-taunt)
   let boss = null; // active giant snail (or null)
 
   let elapsedMs = 0; // wall-clock ms of the current frame (for timers)
   let enemyFireMs = ENEMY_FIRE_BASE_MS; // countdown to the next fleet slime shot
   let fireCooldownMs = 0; // rapid-fire cadence countdown
-  const powerState = { rapidMs: 0, spreadMs: 0, shield: false, mayoMs: 0 };
+  const powerState = { rapidMs: 0, spreadMs: 0, shield: false, mayoMs: 0, stunMs: 0 };
 
   let fleetSpeedMult = 1; // per-level fleet march multiplier (Fast levels)
   let births = []; // snailons spawned mid-frame (splitter children, hatchlings)
@@ -350,8 +356,8 @@
     "זה זארה!",
     "כל הכבוד אייל 👏 בזבזת חולצה טובה על יציאה מע",
     "מחר אני שם את הלוק הסגול",
-    "מכרתי את המחשב שלי אז קניתי שולחן בחינםםם 🆓",
-    "תכנס לאתר חיקויים שלי 🗣️",
+    "מכרתי את המחשב שלי אז קניתי שולחן בחינםםם",
+    "תכנס לאתר חיקויים שלי",
     "עמאי",
     "שמע אתה קמצןןןן",
     "מי בא לטיול קמצנים",
@@ -381,6 +387,7 @@
     },
 
     update(dt) {
+      if (powerState.stunMs > 0) return; // stunned: no movement, no steering
       if (this.movingRight) this.centerx += this.speed * dt;
       if (this.movingLeft) this.centerx -= this.speed * dt;
       // Keep the ship within the screen edges.
@@ -428,6 +435,7 @@
   }
 
   function fireWeapon() {
+    if (powerState.stunMs > 0) return; // stunned: can't fire
     const cap = currentBulletCap();
     if (bullets.length >= cap) return;
     if (powerState.mayoMs > 0) {
@@ -886,15 +894,22 @@
     if (powerState.rapidMs > 0) powerState.rapidMs -= elapsedMs;
     if (powerState.spreadMs > 0) powerState.spreadMs -= elapsedMs;
     if (powerState.mayoMs > 0) powerState.mayoMs -= elapsedMs;
+    if (powerState.stunMs > 0) powerState.stunMs -= elapsedMs;
   }
 
   // ---------------------------------------------------------------------------
   // Speech-bubble taunts
   // ---------------------------------------------------------------------------
   function updateTaunts() {
-    // Age existing bubbles; drop expired ones or those whose speaker is gone.
+    // Age existing bubbles.
     for (const t of taunts) t.ms -= elapsedMs;
-    taunts = taunts.filter((t) => t.ms > 0 && (t.target === boss || aliens.includes(t.target)));
+    const stillTalking = (t) => t.target === boss || aliens.includes(t.target);
+    // A snailon killed mid-taunt (unexpired bubble, speaker now gone) drops
+    // its bubble instead of just vanishing.
+    for (const t of taunts) {
+      if (t.ms > 0 && !stillTalking(t)) spawnFallingBubble(t.target, t.text);
+    }
+    taunts = taunts.filter((t) => t.ms > 0 && stillTalking(t));
 
     tauntTimerMs -= elapsedMs;
     if (tauntTimerMs > 0) return;
@@ -913,21 +928,9 @@
     for (const tt of taunts) drawBubble(tt.target, tt.text);
   }
 
-  function drawBubble(t, text) {
-    ctx.font = "20px Arial, sans-serif";
-    const tw = ctx.measureText(text).width;
-    const bw = tw + 26;
-    const bh = 36;
-    let bx = t.x + t.width / 2 - bw / 2;
-    bx = Math.max(6, Math.min(Settings.screenWidth - bw - 6, bx));
-    let by = t.y - bh - 16;
-    // The boss sits right under the top HUD (health bar, score, power-up
-    // status), so a bubble placed above it would be hidden behind that HUD.
-    // Always draw the boss's bubble below instead.
-    const below = t === boss || by < 4;
-    if (below) by = t.y + t.height + 16;
-
-    // Rounded bubble
+  // Rounded speech-bubble box, no tail (used as-is for the falling bubble;
+  // drawBubble adds a tail on top of this for the live, attached bubble).
+  function drawBubbleBox(bx, by, bw, bh, text) {
     const r = 10;
     ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
     ctx.strokeStyle = "rgb(60, 60, 60)";
@@ -942,7 +945,33 @@
     ctx.fill();
     ctx.stroke();
 
-    // Tail pointing at the speaker
+    ctx.fillStyle = TEXT_COLOR;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, bx + bw / 2, by + bh / 2 + 1);
+    ctx.textAlign = "left";
+  }
+
+  function bubbleSize(text) {
+    ctx.font = "20px Arial, sans-serif";
+    return { width: ctx.measureText(text).width + 26, height: 36 };
+  }
+
+  function drawBubble(t, text) {
+    const { width: bw, height: bh } = bubbleSize(text);
+    let bx = t.x + t.width / 2 - bw / 2;
+    bx = Math.max(6, Math.min(Settings.screenWidth - bw - 6, bx));
+    let by = t.y - bh - 16;
+    // The boss sits right under the top HUD (health bar, score, power-up
+    // status), so a bubble placed above it would be hidden behind that HUD.
+    // Always draw the boss's bubble below instead.
+    const below = t === boss || by < 4;
+    if (below) by = t.y + t.height + 16;
+
+    drawBubbleBox(bx, by, bw, bh, text);
+
+    // Tail pointing at the speaker, drawn on top of the box's border so it
+    // blends into an opening in the outline.
     const tcx = Math.max(bx + 14, Math.min(bx + bw - 14, t.x + t.width / 2));
     ctx.beginPath();
     if (below) {
@@ -957,12 +986,48 @@
     ctx.closePath();
     ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
     ctx.fill();
+  }
 
-    ctx.fillStyle = TEXT_COLOR;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, bx + bw / 2, by + bh / 2 + 1);
-    ctx.textAlign = "left";
+  // ---------------------------------------------------------------------------
+  // Falling speech bubbles: dropped by a snailon killed mid-taunt. Stuns the
+  // ship (blocks movement/firing briefly) on contact instead of costing a life.
+  // ---------------------------------------------------------------------------
+  function spawnFallingBubble(target, text) {
+    const { width: bw, height: bh } = bubbleSize(text);
+    let bx = target.x + target.width / 2 - bw / 2;
+    bx = Math.max(6, Math.min(Settings.screenWidth - bw - 6, bx));
+    const by = target.y + target.height / 2 - bh / 2;
+    fallingBubbles.push({ x: bx, y: by, width: bw, height: bh, text: text });
+  }
+
+  function updateFallingBubbles(dt) {
+    for (const fb of fallingBubbles) fb.y += BUBBLE_FALL * dt;
+    fallingBubbles = fallingBubbles.filter((fb) => fb.y < Settings.screenHeight + fb.height);
+
+    const sr = ship.rect();
+    for (let i = fallingBubbles.length - 1; i >= 0; i--) {
+      if (rectsOverlap(fallingBubbles[i], sr)) {
+        applyStun();
+        fallingBubbles.splice(i, 1);
+      }
+    }
+  }
+
+  function drawFallingBubbles() {
+    for (const fb of fallingBubbles) drawBubbleBox(fb.x, fb.y, fb.width, fb.height, fb.text);
+  }
+
+  function applyStun() {
+    if (powerState.shield) {
+      powerState.shield = false;
+      sfx("shield");
+      spawnExplosion(ship.centerx, ship.y + ship.height / 2, "rgb(80, 160, 255)", 16, 4);
+      return;
+    }
+    powerState.stunMs = STUN_DURATION_MS;
+    sfx("playerHit");
+    triggerFlash("rgb(160, 60, 200)", 400);
+    spawnExplosion(ship.centerx, ship.y + ship.height / 2, "rgb(200, 200, 210)", 14, 4);
   }
 
   // ---------------------------------------------------------------------------
@@ -1018,6 +1083,7 @@
     powerState.spreadMs = 0;
     powerState.shield = false;
     powerState.mayoMs = 0;
+    powerState.stunMs = 0;
     fireCooldownMs = 0;
   }
 
@@ -1037,6 +1103,7 @@
     bullets = [];
     enemyShots = [];
     powerups = [];
+    fallingBubbles = [];
     particles = [];
     boss = null;
     births = [];
@@ -1097,6 +1164,7 @@
     bullets = [];
     enemyShots = [];
     powerups = [];
+    fallingBubbles = [];
     boss = null;
     births = [];
     levelBannerMs = 0;
@@ -1388,6 +1456,7 @@
     if (powerState.rapidMs > 0) items.push("RAPID " + Math.ceil(powerState.rapidMs / 1000) + "s");
     if (powerState.spreadMs > 0) items.push("SPREAD " + Math.ceil(powerState.spreadMs / 1000) + "s");
     if (powerState.shield) items.push("SHIELD");
+    if (powerState.stunMs > 0) items.push("STUNNED " + Math.ceil(powerState.stunMs / 1000) + "s");
     if (!items.length) return;
     const py = boss ? 100 : 60;
     ctx.fillStyle = TEXT_COLOR;
@@ -1563,6 +1632,7 @@
     drawBoss();
     drawEnemyShots();
     drawPowerups();
+    drawFallingBubbles();
     drawParticles();
     if (Stats.gameActive) drawTaunts();
 
@@ -1624,6 +1694,7 @@
         updatePowerups(dt);
         tickPowerTimers();
         updateTaunts();
+        updateFallingBubbles(dt);
       }
       updateParticles(dt); // keep animating sparks even during the respawn freeze
       if (levelBannerMs > 0) levelBannerMs -= elapsedMs;
