@@ -100,6 +100,12 @@
   // ---------------------------------------------------------------------------
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
+  // Hebrew UI strings (taunts, banners) need RTL paragraph direction so that
+  // neutral characters (punctuation, emoji) attach to the correct side of the
+  // text instead of trailing off in LTR reading order. All alignment in this
+  // file uses the physical "left"/"right"/"center" keywords, so this has no
+  // effect on the English/number strings.
+  ctx.direction = "rtl";
 
   const SHIP_W = 80;
   const SHIP_H = 100;
@@ -915,7 +921,10 @@
     let bx = t.x + t.width / 2 - bw / 2;
     bx = Math.max(6, Math.min(Settings.screenWidth - bw - 6, bx));
     let by = t.y - bh - 16;
-    const below = by < 4;
+    // The boss sits right under the top HUD (health bar, score, power-up
+    // status), so a bubble placed above it would be hidden behind that HUD.
+    // Always draw the boss's bubble below instead.
+    const below = t === boss || by < 4;
     if (below) by = t.y + t.height + 16;
 
     // Rounded bubble
