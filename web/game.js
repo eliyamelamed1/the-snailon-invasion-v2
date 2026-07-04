@@ -362,6 +362,7 @@
     "שמע אתה קמצןןןן",
     "מי בא לטיול קמצנים",
     "דוריי הפסיד ללי סין מידד",
+    "בלאנסטון וג'ינס הא",
   ];
   let tauntBag = []; // shuffled queue - every line plays once before any repeat
   let taunts = []; // active speech bubbles: [{ target, text, ms }]
