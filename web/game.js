@@ -363,7 +363,7 @@
     "מי בא לטיול קמצנים",
     "דוריי הפסיד ללי סין מידד",
   ];
-  const BOSS_TAUNTS = TAUNTS;
+  let tauntBag = []; // shuffled queue - every line plays once before any repeat
   let taunts = []; // active speech bubbles: [{ target, text, ms }]
   let tauntTimerMs = 1500;
 
@@ -920,8 +920,21 @@
     if (boss) target = boss;
     else if (aliens.length) target = aliens[Math.floor(Math.random() * aliens.length)];
     if (!target) return;
-    const pool = target === boss ? BOSS_TAUNTS : TAUNTS;
-    taunts.push({ target: target, text: pool[Math.floor(Math.random() * pool.length)], ms: 2800 });
+    taunts.push({ target: target, text: drawTaunt(), ms: 2800 });
+  }
+
+  // Shuffle-bag draw: every line in TAUNTS plays exactly once before any line
+  // repeats, instead of a plain random pick (which can skip a line for a
+  // long time by chance).
+  function drawTaunt() {
+    if (tauntBag.length === 0) {
+      tauntBag = TAUNTS.slice();
+      for (let i = tauntBag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [tauntBag[i], tauntBag[j]] = [tauntBag[j], tauntBag[i]];
+      }
+    }
+    return tauntBag.pop();
   }
 
   function drawTaunts() {
@@ -1093,6 +1106,7 @@
     typedBuffer = "";
     mayoUsedThisLevel = false;
     taunts = [];
+    tauntBag = [];
     tauntTimerMs = 1500;
     shakeMs = 0;
     flashMs = 0;
