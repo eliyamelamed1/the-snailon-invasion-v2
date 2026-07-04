@@ -1,0 +1,33 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Snailon Invasion</title>
+<style>
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #161616;
+    overflow: hidden;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Canvas renders at a fixed internal 1500x800; CSS scales it to fit the
+     viewport while preserving aspect ratio (1500/800 = 1.875 -> 187.5vh). */
+  canvas {
+    display: block;
+    width: min(100vw, 187.5vh);
+    height: auto;
+    background: rgb(230, 230, 230);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+    image-rendering: auto;
+  }
+</style>
+
+<canvas id="game" width="1500" height="800">
+  Your browser does not support the HTML canvas element.
+</canvas>
+
+<script src="game.js"></script>

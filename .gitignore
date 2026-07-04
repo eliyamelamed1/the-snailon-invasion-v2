@@ -1,0 +1,5 @@
+# This repo publishes only the browser game in web/.
+# Ignore everything at the root, then re-include the web game.
+/*
+!/web/
+!/.gitignore
