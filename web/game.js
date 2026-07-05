@@ -1204,6 +1204,23 @@
       startGame();
       return;
     }
+    // Mayo easter egg: typing "מיונז" or "mayo" summons a mayo jar (once per
+    // level). "nhubz" is the same physical keys as "מיונז" typed with the OS
+    // keyboard set to English (Hebrew layout: מ=n, י=h, ו=u, נ=b, ז=z), so it
+    // still works if someone types the Hebrew word without switching layout.
+    // This must run before the "Escape/p" and "b" branches below, since "b"
+    // is itself one of those physical keys and would otherwise never reach
+    // the buffer.
+    if (Stats.gameActive && k.length === 1) {
+      typedBuffer = (typedBuffer + k.toLowerCase()).slice(-8);
+      if (
+        !mayoUsedThisLevel &&
+        (typedBuffer.endsWith("מיונז") || typedBuffer.endsWith("mayo") || typedBuffer.endsWith("nhubz"))
+      ) {
+        summonMayo();
+      }
+    }
+
     if ((k === "Escape" || k === "p" || k === "P") && Stats.gameActive) {
       paused = !paused;
       return;
@@ -1214,14 +1231,6 @@
       return;
     }
     if (!Stats.gameActive) return;
-
-    // Mayo easter egg: typing "מיונז" or "mayo" summons a mayo jar (once per level).
-    if (k.length === 1) {
-      typedBuffer = (typedBuffer + k.toLowerCase()).slice(-8);
-      if (!mayoUsedThisLevel && (typedBuffer.endsWith("מיונז") || typedBuffer.endsWith("mayo"))) {
-        summonMayo();
-      }
-    }
 
     if (k === "ArrowRight") ship.movingRight = true;
     if (k === "ArrowLeft") ship.movingLeft = true;
