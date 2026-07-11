@@ -253,27 +253,20 @@
   music.loop = true;
   music.volume = 0.5;
 
-  // play() must be triggered by a user gesture; startMusic() runs from
-  // startGame(), which fires on the Play click / Enter key, so it's allowed.
+  // The song starts when the game starts and then plays continuously — it is
+  // NOT stopped on pause or game over. play() must be triggered by a user
+  // gesture; startMusic() runs from startGame(), which fires on the Play click
+  // / Enter key, so it's allowed. B still mutes/unmutes it manually.
   function startMusic() {
     if (!musicOn) return;
     music.currentTime = 0;
     music.play().catch(() => {});
   }
 
-  function stopMusic() {
-    music.pause();
-  }
-
-  // Reflect the current musicOn / paused / active state onto the audio element.
-  function syncMusic() {
-    if (musicOn && Stats.gameActive && !paused) music.play().catch(() => {});
-    else music.pause();
-  }
-
   function toggleMusic() {
     musicOn = !musicOn;
-    syncMusic();
+    if (musicOn) music.play().catch(() => {});
+    else music.pause();
   }
 
   // ---------------------------------------------------------------------------
@@ -1168,7 +1161,6 @@
     levelBannerMs = 0;
     taunts = [];
     clearPowerState();
-    stopMusic();
     canvas.style.cursor = "default";
   }
 
@@ -1205,8 +1197,7 @@
     }
 
     if ((k === "Escape" || k === "p" || k === "P") && Stats.gameActive) {
-      paused = !paused;
-      syncMusic(); // pause/resume the track along with the game
+      paused = !paused; // music keeps playing through the pause
       return;
     }
     // Music toggle ("b" — can't use "m", it's part of typing "mayo").
