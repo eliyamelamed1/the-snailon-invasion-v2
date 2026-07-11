@@ -152,6 +152,9 @@
   const MAYO_DMG = 3;
   const MAYO_JAR_W = 44;
   const MAYO_JAR_H = 54;
+  // Ambient "mayo rain": random gap (ms) between self-dropping mayo boost jars.
+  const MAYO_RAIN_MIN_MS = 7000;
+  const MAYO_RAIN_MAX_MS = 14000;
 
   // Snailon enemy types. Each shares the one snail sprite but gets a distinct
   // colored aura + a canvas-drawn emblem (see drawEmblem) so they LOOK different,
@@ -243,65 +246,34 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Background music  (synthesized chiptune loop - no asset files)
-  // A small lookahead scheduler: every 150ms it schedules the next ~400ms of
-  // notes on the WebAudio clock, so timing stays tight without a Worker.
+  // Background music  (a single looping track: web/music.mp3)
   // ---------------------------------------------------------------------------
   let musicOn = true;
-  let musicTimer = null;
-  let musicStep = 0;
-  let musicNextTime = 0;
-  let musicBoss = false; // boss levels get a faster, tenser pattern
+  const music = new Audio("music.mp3");
+  music.loop = true;
+  music.volume = 0.5;
 
-  const MUSIC_ARP = [220, 262, 330, 262, 220, 262, 392, 330]; // A minor arpeggio
-  const MUSIC_BASS = [110, 110, 131, 98];
-  const MUSIC_ARP_BOSS = [196, 233, 294, 233, 196, 233, 349, 294]; // G minor, darker
-  const MUSIC_BASS_BOSS = [98, 98, 117, 87];
-
-  function playNote(freq, when, dur, type, vol) {
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = type;
-    o.frequency.value = freq;
-    g.gain.setValueAtTime(vol, when);
-    g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
-    o.connect(g);
-    g.connect(audioCtx.destination);
-    o.start(when);
-    o.stop(when + dur + 0.02);
-  }
-
-  function scheduleMusic() {
-    if (!audioCtx) return;
-    if (!musicOn || paused) {
-      musicNextTime = audioCtx.currentTime; // stay fresh so resume doesn't burst
-      return;
-    }
-    const tempo = musicBoss ? 0.17 : 0.22; // seconds per eighth note
-    const arp = musicBoss ? MUSIC_ARP_BOSS : MUSIC_ARP;
-    const bass = musicBoss ? MUSIC_BASS_BOSS : MUSIC_BASS;
-    while (musicNextTime < audioCtx.currentTime + 0.4) {
-      playNote(arp[musicStep % arp.length], musicNextTime, tempo * 0.9, "square", 0.018);
-      if (musicStep % 2 === 0) {
-        playNote(bass[(musicStep >> 1) % bass.length], musicNextTime, tempo * 1.8, "triangle", 0.035);
-      }
-      musicNextTime += tempo;
-      musicStep += 1;
-    }
-  }
-
+  // play() must be triggered by a user gesture; startMusic() runs from
+  // startGame(), which fires on the Play click / Enter key, so it's allowed.
   function startMusic() {
-    if (!audioCtx || musicTimer) return;
-    musicStep = 0;
-    musicNextTime = audioCtx.currentTime + 0.1;
-    musicTimer = setInterval(scheduleMusic, 150);
+    if (!musicOn) return;
+    music.currentTime = 0;
+    music.play().catch(() => {});
   }
 
   function stopMusic() {
-    if (musicTimer) {
-      clearInterval(musicTimer);
-      musicTimer = null;
-    }
+    music.pause();
+  }
+
+  // Reflect the current musicOn / paused / active state onto the audio element.
+  function syncMusic() {
+    if (musicOn && Stats.gameActive && !paused) music.play().catch(() => {});
+    else music.pause();
+  }
+
+  function toggleMusic() {
+    musicOn = !musicOn;
+    syncMusic();
   }
 
   // ---------------------------------------------------------------------------
@@ -328,6 +300,7 @@
   // Mayo easter egg state
   let typedBuffer = ""; // rolling buffer of recently typed characters
   let mayoUsedThisLevel = false;
+  let mayoRainMs = 0; // ms until the next ambient mayo boost jar drops
 
   // Juice: screen shake + full-screen flash
   let shakeMs = 0;
@@ -541,7 +514,6 @@
     aliens = [];
     boss = null;
     births = [];
-    musicBoss = false;
     Settings.fleetDirection = 1;
     enemyFireMs = ENEMY_FIRE_BASE_MS;
     const plan = levelPlan(Stats.level);
@@ -706,7 +678,6 @@
     births = [];
     enemyShots = [];
     fleetSpeedMult = 1;
-    musicBoss = true;
     setBanner("LEVEL " + Stats.level + " — GIANT SNAILON");
     boss = {
       x: Settings.screenWidth / 2 - BOSS_W / 2,
@@ -864,6 +835,17 @@
       height: MAYO_JAR_H,
       type: "mayo",
     });
+  }
+
+  // Ambient "mayo rain": mayo boost jars drift down at random intervals all
+  // level long. Independent of the typed easter egg (summonMayo) and its
+  // once-per-level cap. Reuses the "mayo" powerup for fall/pickup/draw.
+  function updateMayoRain() {
+    mayoRainMs -= elapsedMs;
+    if (mayoRainMs > 0) return;
+    mayoRainMs = MAYO_RAIN_MIN_MS + Math.random() * (MAYO_RAIN_MAX_MS - MAYO_RAIN_MIN_MS);
+    const jarX = 10 + Math.random() * (Settings.screenWidth - MAYO_JAR_W - 20);
+    powerups.push({ x: jarX, y: -MAYO_JAR_H, width: MAYO_JAR_W, height: MAYO_JAR_H, type: "mayo" });
   }
 
   function updatePowerups(dt) {
@@ -1109,6 +1091,7 @@
     taunts = [];
     tauntBag = [];
     tauntTimerMs = 1500;
+    mayoRainMs = MAYO_RAIN_MIN_MS;
     shakeMs = 0;
     flashMs = 0;
     Settings.initializeDynamicSettings();
@@ -1223,11 +1206,12 @@
 
     if ((k === "Escape" || k === "p" || k === "P") && Stats.gameActive) {
       paused = !paused;
+      syncMusic(); // pause/resume the track along with the game
       return;
     }
     // Music toggle ("b" — can't use "m", it's part of typing "mayo").
     if (k === "b" || k === "B" || k === "ב") {
-      musicOn = !musicOn;
+      toggleMusic();
       return;
     }
     if (!Stats.gameActive) return;
@@ -1716,6 +1700,7 @@
         updateEnemyFire();
         updateEnemyShots(dt);
         updatePowerups(dt);
+        updateMayoRain();
         tickPowerTimers();
         updateTaunts();
         updateFallingBubbles(dt);
