@@ -341,7 +341,7 @@
     "עמאי",
     "שמע אתה קמצןןןן",
     "מי בא לטיול קמצנים",
-    "דוריי הפסיד ללי סין מידד",
+    "דורי הפסיד ללי סין mid",
     "בלאנסטון וג'ינס הא",
   ];
   let tauntBag = []; // shuffled queue - every line plays once before any repeat
@@ -448,6 +448,8 @@
 
   function updateBullets(dt) {
     for (const b of bullets) {
+      b.prevX = b.x; // remember where we were, for swept collision below
+      b.prevY = b.y;
       b.y -= b.speed * dt;
       b.x += b.vx * dt;
     }
@@ -460,6 +462,17 @@
 
     // A wave is cleared when no fleet remains and no boss is alive.
     if (aliens.length === 0 && !boss) startNextWave();
+  }
+
+  // Swept bullet rect: the box covering the path travelled since last frame, so
+  // a fast bullet can't tunnel past a short target (e.g. a 48px baby snailon)
+  // when its per-frame step exceeds the target's height.
+  function bulletSweptRect(b) {
+    const px = b.prevX != null ? b.prevX : b.x;
+    const py = b.prevY != null ? b.prevY : b.y;
+    const x = Math.min(px, b.x);
+    const y = Math.min(py, b.y);
+    return { x: x, y: y, w: Math.max(px, b.x) + b.width - x, h: Math.max(py, b.y) + b.height - y };
   }
 
   // ---------------------------------------------------------------------------
@@ -575,7 +588,7 @@
     const deadAliens = new Set();
     for (const bullet of bullets) {
       let consumed = false;
-      const b = { x: bullet.x, y: bullet.y, w: bullet.width, h: bullet.height };
+      const b = bulletSweptRect(bullet);
       for (let ai = 0; ai < aliens.length; ai++) {
         if (deadAliens.has(ai)) continue;
         const a = aliens[ai];
@@ -730,7 +743,7 @@
     if (!boss || !bullets.length) return;
     const keep = [];
     for (const b of bullets) {
-      const br = { x: b.x, y: b.y, w: b.width, h: b.height };
+      const br = bulletSweptRect(b);
       if (boss && rectsOverlap(br, boss)) {
         boss.hp -= b.dmg || 1;
         spawnExplosion(
@@ -931,6 +944,8 @@
     for (const tt of taunts) drawBubble(tt.target, tt.text);
   }
 
+  const BUBBLE_FONT = "20px Arial, sans-serif";
+
   // Rounded speech-bubble box, no tail (used as-is for the falling bubble;
   // drawBubble adds a tail on top of this for the live, attached bubble).
   function drawBubbleBox(bx, by, bw, bh, text) {
@@ -949,6 +964,7 @@
     ctx.stroke();
 
     ctx.fillStyle = TEXT_COLOR;
+    ctx.font = BUBBLE_FONT; // fixed size regardless of whatever font ran last
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, bx + bw / 2, by + bh / 2 + 1);
@@ -956,7 +972,7 @@
   }
 
   function bubbleSize(text) {
-    ctx.font = "20px Arial, sans-serif";
+    ctx.font = BUBBLE_FONT;
     return { width: ctx.measureText(text).width + 26, height: 36 };
   }
 
@@ -1248,6 +1264,90 @@
     const y = (e.clientY - rect.top) * (canvas.height / rect.height);
     if (pointInPlayButton(x, y)) startGame();
   });
+
+  // ---------------------------------------------------------------------------
+  // Touch controls (mobile): drag anywhere to move the ship; auto-fire while a
+  // finger is down. On the menu, a tap synthesizes a click that hits "Play"
+  // (handled above), so start/restart works without any extra code here.
+  // ---------------------------------------------------------------------------
+  const TOUCH_FIRE_MS = 200; // base auto-fire cadence while touching
+  let touchFiring = false;
+  let touchFireMs = 0;
+
+  function steerShipToTouch(t) {
+    if (!Stats.gameActive || paused || powerState.stunMs > 0) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (t.clientX - rect.left) * (canvas.width / rect.width);
+    const half = ship.width / 2;
+    ship.centerx = Math.max(half, Math.min(Settings.screenWidth - half, x));
+  }
+
+  canvas.addEventListener(
+    "touchstart",
+    (e) => {
+      if (!Stats.gameActive || paused) return;
+      e.preventDefault();
+      touchFiring = true;
+      touchFireMs = 0; // fire on the very first frame of the touch
+      steerShipToTouch(e.touches[0]);
+    },
+    { passive: false }
+  );
+  canvas.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!Stats.gameActive || paused) return;
+      e.preventDefault();
+      steerShipToTouch(e.touches[0]);
+    },
+    { passive: false }
+  );
+  const endTouch = () => {
+    touchFiring = false;
+  };
+  canvas.addEventListener("touchend", endTouch);
+  canvas.addEventListener("touchcancel", endTouch);
+
+  // Auto-fire tick (called from the game loop). Uses the rapid-fire cadence
+  // while that power-up is active, otherwise the slower base cadence.
+  function updateTouchFire() {
+    if (!touchFiring) return;
+    touchFireMs -= elapsedMs;
+    if (touchFireMs <= 0) {
+      fireWeapon();
+      touchFireMs = powerState.rapidMs > 0 ? RAPID_CADENCE_MS : TOUCH_FIRE_MS;
+    }
+  }
+
+  // On-screen pause/resume button — mobile only (there's no touch path to
+  // pause otherwise). Hidden on desktop and in portrait (see index.html).
+  if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
+    const pauseBtn = document.createElement("button");
+    pauseBtn.id = "pauseBtn";
+    pauseBtn.textContent = "⏸";
+    pauseBtn.setAttribute("aria-label", "Pause / resume");
+    Object.assign(pauseBtn.style, {
+      position: "fixed",
+      top: "10px",
+      right: "10px",
+      zIndex: "10",
+      width: "48px",
+      height: "48px",
+      fontSize: "22px",
+      padding: "0",
+      background: "rgba(0, 0, 0, 0.45)",
+      color: "#fff",
+      border: "1px solid rgba(255, 255, 255, 0.5)",
+      borderRadius: "8px",
+    });
+    pauseBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (!Stats.gameActive) return;
+      paused = !paused; // music keeps playing through the pause
+      pauseBtn.textContent = paused ? "▶" : "⏸";
+    });
+    document.body.appendChild(pauseBtn);
+  }
 
   // ---------------------------------------------------------------------------
   // Rendering  (ports scoreboard.py + button.py, plus the new HUD pieces)
@@ -1584,6 +1684,11 @@
       Settings.screenWidth / 2,
       r.y + r.h + 92
     );
+    ctx.fillText(
+      "Mobile: drag to move • auto-fires   |   מובייל: החלק כדי לזוז • יורה אוטומטית",
+      Settings.screenWidth / 2,
+      r.y + r.h + 128
+    );
     ctx.textAlign = "left";
   }
 
@@ -1697,6 +1802,7 @@
         respawnTimer -= elapsed; // freeze gameplay during respawn
       } else {
         updateRapidFire();
+        updateTouchFire();
         ship.update(dt);
         updateBullets(dt); // bullet-alien, bullet-boss, wave progression
         updateBoss(dt);

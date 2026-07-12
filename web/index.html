@@ -1,5 +1,8 @@
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+/>
 <title>The Snailon Invasion</title>
 <style>
   html, body {
@@ -23,11 +26,46 @@
     background: rgb(230, 230, 230);
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
     image-rendering: auto;
+    touch-action: none; /* let the game handle drags; no page scroll/zoom */
+  }
+  /* "Rotate to landscape" prompt — only on portrait touch devices, so desktop
+     (a fine pointer) never sees it regardless of window shape. */
+  #rotate {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: #161616;
+    color: rgb(230, 230, 230);
+    font-size: 22px;
+    text-align: center;
+    padding: 24px;
+  }
+  #rotate .icon {
+    font-size: 64px;
+    animation: rotateHint 1.6s ease-in-out infinite;
+  }
+  @keyframes rotateHint {
+    0%, 100% { transform: rotate(-15deg); }
+    50% { transform: rotate(75deg); }
+  }
+  @media (orientation: portrait) and (pointer: coarse) {
+    #rotate { display: flex; }
+    canvas { display: none; }
   }
 </style>
 
 <canvas id="game" width="1500" height="800">
   Your browser does not support the HTML canvas element.
 </canvas>
+
+<div id="rotate">
+  <div class="icon">🔄</div>
+  <div>Rotate your device to landscape<br />סובב את המכשיר לרוחב</div>
+</div>
 
 <script src="game.js"></script>
