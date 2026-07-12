@@ -253,20 +253,34 @@
   music.loop = true;
   music.volume = 0.5;
 
-  // The song starts when the game starts and then plays continuously — it is
-  // NOT stopped on pause or game over. play() must be triggered by a user
-  // gesture; startMusic() runs from startGame(), which fires on the Play click
-  // / Enter key, so it's allowed. B still mutes/unmutes it manually.
+  // The song starts as soon as the page loads and then plays continuously — it
+  // loops and is NOT stopped on pause or game over (B mutes/unmutes it). Browser
+  // autoplay policy usually blocks audio until the first user interaction, so
+  // primeMusic() tries immediately AND arms one-shot listeners that start it on
+  // the first key/pointer/touch — whichever lands first.
   function startMusic() {
-    if (!musicOn) return;
-    music.currentTime = 0;
-    music.play().catch(() => {});
+    if (musicOn) music.play().catch(() => {});
   }
 
   function toggleMusic() {
     musicOn = !musicOn;
     if (musicOn) music.play().catch(() => {});
     else music.pause();
+  }
+
+  function primeMusic() {
+    startMusic(); // immediate attempt on load (plays if the browser allows it)
+    const kick = () => {
+      startMusic();
+      if (!music.paused) {
+        window.removeEventListener("pointerdown", kick);
+        window.removeEventListener("keydown", kick);
+        window.removeEventListener("touchstart", kick);
+      }
+    };
+    window.addEventListener("pointerdown", kick);
+    window.addEventListener("keydown", kick);
+    window.addEventListener("touchstart", kick);
   }
 
   // ---------------------------------------------------------------------------
@@ -1723,4 +1737,6 @@
       images[key].onerror = onImg; // start anyway; missing art shouldn't hard-block
     }
   }
+
+  primeMusic(); // begin the music as early as the browser allows
 })();
