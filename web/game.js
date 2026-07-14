@@ -1328,8 +1328,11 @@
     pauseBtn.setAttribute("aria-label", "Pause / resume");
     Object.assign(pauseBtn.style, {
       position: "fixed",
-      top: "10px",
-      right: "10px",
+      // Bottom-right: the only HUD-free corner (lives top-left, score/level
+      // top-right, high-score top-center, SPEED bottom-left). Safe-area insets
+      // keep it clear of the home indicator.
+      bottom: "calc(10px + env(safe-area-inset-bottom))",
+      right: "calc(10px + env(safe-area-inset-right))",
       zIndex: "10",
       width: "48px",
       height: "48px",
